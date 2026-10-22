@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JobVault — Job Application Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="fanta.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-icon"><i class="fa-solid fa-briefcase"></i></span><span>JobVault</span></div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</button>
+        <button class="nav-item" data-view="jobs"><i class="fa-solid fa-bookmark"></i> Saved Jobs</button>
+      </nav>
+      <div class="sidebar-note"><i class="fa-solid fa-shield-halved"></i><span>Your applications stay organised and linked to your account.</span></div>
+    </aside>
+
+    <main class="main">
+      <div id="toast" class="toast"></div>
+
+      <section id="auth-view" class="auth-view">
+        <div class="auth-panel">
+          <div class="auth-brand"><span class="brand-icon"><i class="fa-solid fa-briefcase"></i></span><h1>JobVault</h1></div>
+          <p class="muted">Keep track of the jobs you're interested in, applying to, and interviewing for.</p>
+
+          <div class="auth-tabs">
+            <button class="auth-tab active" data-auth="login">Login</button>
+            <button class="auth-tab" data-auth="register">Create account</button>
+          </div>
+
+          <form id="auth-form">
+            <label>Email<input id="auth-email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+            <label>Password<input id="auth-password" type="password" autocomplete="current-password" required placeholder="••••••••"></label>
+            <button class="primary-btn wide" type="submit" id="auth-submit">Login</button>
+          </form>
+          <p id="auth-message" class="form-message"></p>
+        </div>
+      </section>
+
+      <section id="app-view" class="hidden">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">JOB APPLICATION TRACKER</p>
+            <h1>Good to see you.</h1>
+            <p class="muted">Stay on top of every opportunity.</p>
+          </div>
+          <div class="top-actions">
+            <button class="icon-btn" id="refresh-btn" title="Refresh jobs"><i class="fa-solid fa-rotate"></i></button>
+            <button class="logout-btn" id="logout-btn">Logout</button>
+          </div>
+        </header>
+
+        <section id="dashboard-view" class="view">
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-icon blue"><i class="fa-solid fa-layer-group"></i></div><div><span>Total jobs</span><strong id="total-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon purple"><i class="fa-solid fa-paper-plane"></i></div><div><span>Applied</span><strong id="applied-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon orange"><i class="fa-solid fa-comments"></i></div><div><span>Interviews</span><strong id="interview-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-circle-check"></i></div><div><span>Accepted</span><strong id="accepted-count">0</strong></div></div>
+          </div>
+
+          <div class="content-grid">
+            <section class="panel">
+              <div class="panel-heading"><div><h2>Add a job</h2><p class="muted">Save an opportunity before you forget it.</p></div></div>
+              <form id="job-form" class="job-form">
+                <label>Company<input id="company" required placeholder="e.g. Google"></label>
+                <label>Job title<input id="job-title" required placeholder="e.g. Backend Engineer"></label>
+                <label class="full">Job URL<input id="job-url" type="url" required placeholder="https://company.com/jobs/123"></label>
+                <label>Status<select id="job-status"><option>Saved</option><option>Applied</option><option>Interview</option><option>Rejected</option><option>Accepted</option></select></label>
+                <button class="primary-btn" type="submit"><i class="fa-solid fa-plus"></i> Save job</button>
+              </form>
+              <p id="job-message" class="form-message"></p>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading"><div><h2>Quick view</h2><p class="muted">Your latest saved opportunities.</p></div><button class="text-btn" data-view="jobs">View all <i class="fa-solid fa-arrow-right"></i></button></div>
+              <div id="recent-jobs" class="compact-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="jobs-view" class="view hidden">
+          <div class="panel">
+            <div class="panel-heading">
+              <div><h2>Saved jobs</h2><p class="muted">Search and manage your opportunities.</p></div>
+              <button class="primary-btn" id="add-job-focus"><i class="fa-solid fa-plus"></i> Add job</button>
+            </div>
+            <div class="filters">
+              <div class="search-box"><i class="fa-solid fa-magnifying-glass"></i><input id="search-input" placeholder="Search company or job title"></div>
+              <select id="status-filter"><option value="">All statuses</option><option>Saved</option><option>Applied</option><option>Interview</option><option>Rejected</option><option>Accepted</option></select>
+            </div>
+            <div id="jobs-list" class="jobs-list"></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+<script>
+(() => {
+  // Change API_BASE if your backend is hosted somewhere else.
+  const API_BASE = "http://localhost:3000";
+
+  let mode = "login";
+  let jobs = [];
+  let token = localStorage.getItem("jobvault_token");
+
+  const $ = (id) => document.getElementById(id);
+  const authView = $("auth-view"), appView = $("app-view");
+
+  function showToast(message, type="success") {
+    const el = $("toast");
+    el.textContent = message;
+    el.className = `toast show ${type}`;
+    setTimeout(() => el.className = "toast", 3000);
+  }
+
+  function setAuthMode(next) {
+    mode = next;
+    document.querySelectorAll(".auth-tab").forEach(b => b.classList.toggle("active", b.dataset.auth === next));
+    $("auth-submit").textContent = next === "login" ? "Login" : "Create account";
+    $("auth-password").autocomplete = next === "login" ? "current-password" : "new-password";
+    $("auth-message").textContent = "";
+  }
+
+  async function api(path, options={}) {
+    const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(API_BASE + path, { ...options, headers });
+    let data = null;
+    try { data = await response.json(); } catch {}
+    if (!response.ok) throw new Error(data?.message || data?.error || `Request failed (${response.status})`);
+    return data;
+  }
+
+  const ENDPOINTS = {
+    login: "/auth/login",
+    register: "/auth/register",
+    jobs: "/jobs"
+  };
+
+  function extractToken(data) {
+    return data?.token || data?.accessToken || data?.jwt || data?.data?.token || data?.data?.accessToken;
+  }
+
+  function extractJobs(data) {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.jobs)) return data.jobs;
+    if (Array.isArray(data?.data)) return data.data;
+    if (Array.isArray(data?.data?.jobs)) return data.data.jobs;
+    return [];
+  }
+
+  // --- FIXED AUTHENTICATION HANDLING ---
+  async function handleAuth(e) {
+    e.preventDefault(); // <-- Stops the browser from appending "?" and reloading!
+    const email = $("auth-email").value.trim();
+    const password = $("auth-password").value;
+    $("auth-message").style.color = "inherit";
+    $("auth-message").textContent = "Please wait...";
+
+    try {
+      // Your backend expects "username" instead of "email" based on your router file
+      const data = await api(ENDPOINTS[mode], { 
+        method: "POST", 
+        body: JSON.stringify({ email: email, password: password }) 
+      });
+
+      const received = extractToken(data);
+      if (!received) throw new Error("Authentication succeeded, but no token was returned.");
+      
+      token = received;
+      localStorage.getItem("jobvault_token", token);
+      showToast(mode === "login" ? "Welcome back!" : "Account created successfully!");
+      
+      // Clear form inputs and switch to app dashboard
+      $("auth-form").reset();
+      initApp();
+    } catch (err) {
+      console.error(err);
+      $("auth-message").style.color = "var(--error-color, red)";
+      $("auth-message").textContent = err.message;
+    }
+  }
+
+  // --- JOB APP DASHBOARD RENDERING ---
+  async function fetchAndRenderJobs() {
+    try {
+      const data = await api(ENDPOINTS.jobs);
+      jobs = extractJobs(data);
+      renderDashboard();
+      renderJobsList();
+    } catch (err) {
+      showToast(err.message, "error");
+      if (err.message.includes("Unauthorized") || err.message.includes("401")) {
+        logout();
+      }
+    }
+  }
+
+  function renderDashboard() {
+    $("total-count").textContent = jobs.length;
+    $("applied-count").textContent = jobs.filter(j => j.status?.toLowerCase() === "applied").length;
+    $("interview-count").textContent = jobs.filter(j => j.status?.toLowerCase() === "interview").length;
+    $("accepted-count").textContent = jobs.filter(j => j.status?.toLowerCase() === "accepted").length;
+
+    // Render quick view panel (latest 3 jobs)
+    const recentContainer = $("recent-jobs");
+    const recentJobs = [...jobs].reverse().slice(0, 3);
+    
+    if (recentJobs.length === 0) {
+      recentContainer.innerHTML = `<p class="muted">No jobs tracked yet.</p>`;
+      return;
+    }
+
+    recentContainer.innerHTML = recentJobs.map(job => `
+      <div class="card compact-item">
+        <div>
+          <strong>${escapeHTML(job.company)}</strong> — ${escapeHTML(job.jobTitle)}
+        </div>
+        <span class="badge ${job.status?.toLowerCase()}">${escapeHTML(job.status)}</span>
+      </div>
+    `).join("");
+  }
+
+  function renderJobsList() {
+    const listContainer = $("jobs-list");
+    const searchVal = $("search-input").value.toLowerCase();
+    const filterStatus = $("status-filter").value;
+
+    const filtered = jobs.filter(job => {
+      const matchesSearch = job.company?.toLowerCase().includes(searchVal) || job.jobTitle?.toLowerCase().includes(searchVal);
+      const matchesFilter = !filterStatus || job.status === filterStatus;
+      return matchesSearch && matchesFilter;
+    });
+
+    if (filtered.length === 0) {
+      listContainer.innerHTML = `<p class="muted" style="padding: 20px; text-align: center;">No matching opportunities found.</p>`;
+      return;
+    }
+
+    listContainer.innerHTML = filtered.map(job => `
+      <div class="card job-card">
+        <div class="job-card-details">
+          <h3>${escapeHTML(job.jobTitle)}</h3>
+          <p><strong>${escapeHTML(job.company)}</strong></p>
+          ${job.jobUrl ? `<a href="${escapeHTML(job.jobUrl)}" target="_blank" class="job-link"><i class="fa-solid fa-external-link"></i> View Posting</a>` : ''}
+        </div>
+        <div class="job-card-actions">
+          <span class="badge ${job.status?.toLowerCase()}">${escapeHTML(job.status)}</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  async function handleAddJob(e) {
+    e.preventDefault();
+    const company = $("company").value.trim();
+    const jobTitle = $("job-title").value.trim();
+    const jobUrl = $("job-url").value.trim();
+    const status = $("job-status").value;
+
+    try {
+      await api(ENDPOINTS.jobs, {
+        method: "POST",
+        body: JSON.stringify({ company, jobTitle, jobUrl, status })
+      });
+      showToast("Job added successfully!");
+      $("job-form").reset();
+      fetchAndRenderJobs();
+    } catch (err) {
+      showToast(err.message, "error");
+    }
+  }
+
+  // --- NAVIGATION & VIEW SCRIPTING ---
+  function switchView(viewName) {
+    document.querySelectorAll(".view").forEach(v => v.classList.add("hidden"));
+    document.querySelectorAll(".nav-item").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.view === viewName);
+    });
+    $(`${viewName}-view`).classList.remove("hidden");
+  }
+
+  function initApp() {
+    authView.classList.add("hidden");
+    appView.classList.remove("hidden");
+    switchView("dashboard");
+    fetchAndRenderJobs();
+  }
+
+  function logout() {
+    token = null;
+    localStorage.removeItem("jobvault_token");
+    appView.classList.add("hidden");
+    authView.classList.remove("hidden");
+    setAuthMode("login");
+  }
+
+  function escapeHTML(str) {
+    if (!str) return '';
+    return str.replace(/[&<>'"]/g, 
+      tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+    );
+  }
+
+  // --- ATTACH EVENT LISTENERS ---
+  $("auth-form").addEventListener("submit", handleAuth);
+  $("job-form").addEventListener("submit", handleAddJob);
+  $("logout-btn").addEventListener("click", logout);
+  $("refresh-btn").addEventListener("click", fetchAndRenderJobs);
+  $("search-input").addEventListener("input", renderJobsList);
+  $("status-filter").addEventListener("change", renderJobsList);
+
+  $("add-job-focus").addEventListener("click", () => {
+    switchView("dashboard");
+    $("company").focus();
+  });
+
+  document.querySelectorAll(".auth-tab").forEach(tab => {
+    tab.addEventListener("click", (e) => setAuthMode(e.target.dataset.auth));
+  });
+
+  document.querySelectorAll(".nav-item").forEach(item => {
+    item.addEventListener("click", (e) => {
+      const btn = e.target.closest(".nav-item");
+      if (btn) switchView(btn.dataset.view);
+    });
+  });
+
+  document.querySelectorAll("[data-view='jobs']").forEach(el => {
+    el.addEventListener("click", () => switchView("jobs"));
+  });
+
+  // --- RUN UPON INITIAL START ---
+  if (token) {
+    initApp();
+  } else {
+    setAuthMode("login");
+  }
+})();
+
+</script>
+</body>
+</html>
