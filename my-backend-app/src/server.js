@@ -8,6 +8,11 @@ app.get('/', (req, res) => {
     res.status(200).send('Hello, World!');
 });
 
+// profile
+app.get('/profile', (req, res) => {
+    res.status(200).send('This is the profile page.');
+});
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
